@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inbox — WhatsApp Piloto</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#16201c;
+    --paper:#f6f4ee;
+    --line:#dcd8cc;
+    --sage:#4f7a68;
+    --sage-dark:#33574a;
+    --sage-light:#e4ede8;
+    --amber:#c98a3a;
+    --muted:#7a7d72;
+    --white:#ffffff;
+    --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:var(--sans);
+    background:var(--paper);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- PIN GATE ---------- */
+  #gate{
+    position:fixed;inset:0;background:var(--ink);
+    display:flex;align-items:center;justify-content:center;
+    z-index:100;
+  }
+  #gate.hidden{display:none;}
+  .gate-box{
+    background:var(--paper);border-radius:4px;padding:40px 36px;
+    width:280px;text-align:center;
+    box-shadow:0 20px 60px rgba(0,0,0,.4);
+  }
+  .gate-box .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--sage);margin-bottom:6px;
+  }
+  .gate-box h1{font-size:19px;margin:0 0 22px;font-weight:600;}
+  .gate-box input{
+    width:100%;padding:12px;font-size:20px;letter-spacing:.3em;
+    text-align:center;border:1px solid var(--line);border-radius:4px;
+    background:var(--white);font-family:var(--mono);margin-bottom:14px;
+    outline:none;
+  }
+  .gate-box input:focus{border-color:var(--sage);}
+  .gate-box button{
+    width:100%;padding:12px;background:var(--sage);color:#fff;border:none;
+    border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;
+    font-family:var(--sans);transition:background .15s;
+  }
+  .gate-box button:hover{background:var(--sage-dark);}
+  .gate-err{color:#b3543a;font-size:12px;margin-top:10px;font-family:var(--mono);min-height:16px;}
+
+  /* ---------- APP LAYOUT ---------- */
+  #app{display:none;height:100vh;}
+  #app.visible{display:flex;}
+
+  /* sidebar */
+  .sidebar{
+    width:340px;min-width:280px;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;background:var(--white);
+  }
+  .sidebar-head{
+    padding:18px 20px 14px;border-bottom:1px solid var(--line);
+  }
+  .sidebar-head .eyebrow{
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--sage);margin-bottom:4px;
+  }
+  .sidebar-head h1{margin:0;font-size:18px;font-weight:700;}
+  .sidebar-head .count{
+    font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;
+  }
+  .conv-list{flex:1;overflow-y:auto;}
+  .conv-item{
+    padding:14px 20px;border-bottom:1px solid var(--line);cursor:pointer;
+    transition:background .1s;position:relative;
+  }
+  .conv-item:hover{background:var(--sage-light);}
+  .conv-item.active{background:var(--sage-light);border-left:3px solid var(--sage);padding-left:17px;}
+  .conv-item .row1{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .conv-item .name{font-weight:600;font-size:14.5px;}
+  .conv-item .time{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap;}
+  .conv-item .preview{
+    font-size:13px;color:var(--muted);margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .conv-item .phone{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px;}
+  .badge-abierta{
+    display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.06em;
+    text-transform:uppercase;background:var(--sage);color:#fff;
+    padding:1px 6px;border-radius:2px;margin-left:6px;vertical-align:middle;
+  }
+  .badge-cerrada{background:var(--muted);}
+  .empty-list{padding:40px 20px;color:var(--muted);font-size:13px;text-align:center;}
+
+  /* chat pane */
+  .chat{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .chat-head{
+    padding:16px 28px;border-bottom:1px solid var(--line);
+    display:flex;justify-content:space-between;align-items:center;background:var(--white);
+  }
+  .chat-head .name{font-weight:700;font-size:16px;}
+  .chat-head .phone{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .chat-head .stage{
+    font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--sage);border:1px solid var(--sage);padding:3px 9px;border-radius:20px;
+  }
+  .chat-empty{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:14px;flex-direction:column;gap:8px;
+  }
+  .chat-empty .glyph{font-size:30px;opacity:.4;}
+  .messages{
+    flex:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:10px;
+    background:
+      linear-gradient(var(--paper),var(--paper));
+  }
+  .msg{max-width:62%;padding:10px 14px;border-radius:10px;font-size:14px;line-height:1.45;position:relative;}
+  .msg .meta{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-top:5px;display:block;}
+  .msg.contacto{align-self:flex-start;background:var(--white);border:1px solid var(--line);border-bottom-left-radius:2px;}
+  .msg.agente{align-self:flex-end;background:var(--sage);color:#fff;border-bottom-right-radius:2px;}
+  .msg.agente .meta{color:rgba(255,255,255,.75);}
+
+  .composer{
+    border-top:1px solid var(--line);padding:14px 20px;display:flex;gap:10px;
+    background:var(--white);
+  }
+  .composer textarea{
+    flex:1;resize:none;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    font-family:var(--sans);font-size:14px;outline:none;line-height:1.4;max-height:120px;
+  }
+  .composer textarea:focus{border-color:var(--sage);}
+  .composer button{
+    background:var(--sage);color:#fff;border:none;border-radius:8px;padding:0 20px;
+    font-weight:600;font-size:13px;cursor:pointer;transition:background .15s;
+  }
+  .composer button:hover{background:var(--sage-dark);}
+  .composer button:disabled{background:var(--line);cursor:default;color:var(--muted);}
+
+  .toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;
+    font-family:var(--mono);opacity:0;transition:opacity .2s;pointer-events:none;z-index:50;
+  }
+  .toast.show{opacity:1;}
+  .toast.err{background:#8a3b2a;}
+
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="eyebrow">Piloto · WhatsApp CRM</div>
+    <h1>Inbox privado</h1>
+    <input type="password" id="pinInput" maxlength="6" placeholder="••••" autofocus inputmode="numeric">
+    <button onclick="checkPin()">Entrar</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="sidebar">
+    <div class="sidebar-head">
+      <div class="eyebrow">Conversaciones</div>
+      <h1>Inbox</h1>
+      <div class="count" id="convCount">cargando…</div>
+    </div>
+    <div class="conv-list" id="convList"></div>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="chat-empty">
+      <div class="glyph">◧</div>
+      Selecciona una conversación
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ====== CONFIG ======
+const SUPABASE_URL = 'https://bfyrxykuaqxvbqtjojoe.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeXJ4eWt1YXF4dmJxdGpvam9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3ODEyNTYsImV4cCI6MjA5NDM1NzI1Nn0.-qF-Cqzj2nvlkaKDzDlGQcmj2L-OGbcrsCDNAlP_sxI';
+const SEND_WEBHOOK = 'https://comunicacionesenlanube.app.n8n.cloud/webhook/piloto-enviar-mensaje';
+const PIN = '6734'; // mismo PIN que EventosADMON, cámbialo si quieres uno distinto
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let conversaciones = [];
+let activeConvId = null;
+let activeContacto = null;
+let msgChannel = null;
+
+// ---------- PIN GATE ----------
+function checkPin(){
+  const val = document.getElementById('pinInput').value;
+  if(val === PIN){
+    document.getElementById('gate').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    sessionStorage.setItem('inbox_pin_ok','1');
+    init();
+  } else {
+    document.getElementById('gateErr').textContent = 'PIN incorrecto';
+    document.getElementById('pinInput').value = '';
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter') checkPin();
+});
+if(sessionStorage.getItem('inbox_pin_ok') === '1'){
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  init();
+}
+
+// ---------- HELPERS ----------
+function showToast(msg, isErr){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  setTimeout(()=> t.className='toast', 2200);
+}
+function fmtTime(iso){
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})
+    : d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+}
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ---------- LOAD CONVERSATIONS ----------
+async function loadConversaciones(){
+  const { data, error } = await sb
+    .from('conversaciones')
+    .select('id,estado,pipeline_stage,ultima_actividad,contacto_id,contactos(nombre,telefono)')
+    .order('ultima_actividad', { ascending:false });
+
+  if(error){ showToast('Error cargando conversaciones', true); console.error(error); return; }
+
+  conversaciones = data || [];
+  renderConvList();
+}
+
+async function renderConvList(){
+  const list = document.getElementById('convList');
+  document.getElementById('convCount').textContent = conversaciones.length + ' conversación(es)';
+
+  if(!conversaciones.length){
+    list.innerHTML = '<div class="empty-list">Sin conversaciones todavía.<br>Manda un WhatsApp de prueba al número piloto.</div>';
+    return;
+  }
+
+  // último mensaje de cada conversación (para preview)
+  const previews = {};
+  await Promise.all(conversaciones.map(async c => {
+    const { data } = await sb.from('mensajes')
+      .select('contenido,remitente')
+      .eq('conversacion_id', c.id)
+      .order('timestamp', { ascending:false })
+      .limit(1);
+    previews[c.id] = data && data[0] ? data[0] : null;
+  }));
+
+  list.innerHTML = conversaciones.map(c => {
+    const nombre = (c.contactos && c.contactos.nombre) || 'Sin nombre';
+    const telefono = (c.contactos && c.contactos.telefono) || '';
+    const prev = previews[c.id];
+    const prevText = prev ? (prev.remitente === 'agente' ? 'Tú: ' : '') + escapeHtml(prev.contenido || '') : '—';
+    const badgeClass = c.estado === 'abierta' ? 'badge-abierta' : 'badge-cerrada';
+    return `
+      <div class="conv-item ${c.id===activeConvId?'active':''}" onclick="openConv('${c.id}')">
+        <div class="row1">
+          <span class="name">${escapeHtml(nombre)}<span class="${badgeClass}">${c.estado}</span></span>
+          <span class="time">${fmtTime(c.ultima_actividad)}</span>
+        </div>
+        <div class="preview">${prevText}</div>
+        <div class="phone">+${telefono}</div>
+      </div>`;
+  }).join('');
+}
+
+// ---------- OPEN CONVERSATION ----------
+async function openConv(convId){
+  activeConvId = convId;
+  const conv = conversaciones.find(c => c.id === convId);
+  activeContacto = conv.contactos;
+  renderConvList();
+  renderChatShell(conv);
+  await loadMessages(convId);
+  subscribeToMessages(convId);
+}
+
+function renderChatShell(conv){
+  const nombre = (conv.contactos && conv.contactos.nombre) || 'Sin nombre';
+  const telefono = (conv.contactos && conv.contactos.telefono) || '';
+  document.getElementById('chat').innerHTML = `
+    <div class="chat-head">
+      <div>
+        <div class="name">${escapeHtml(nombre)}</div>
+        <div class="phone">+${telefono}</div>
+      </div>
+      <div class="stage">${escapeHtml(conv.pipeline_stage || 'nuevo')}</div>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="composer">
+      <textarea id="composerInput" placeholder="Escribe una respuesta…" rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+      <button id="sendBtn" onclick="sendMessage()">Enviar</button>
+    </div>
+  `;
+}
+
+async function loadMessages(convId){
+  const { data, error } = await sb.from('mensajes')
+    .select('*')
+    .eq('conversacion_id', convId)
+    .order('timestamp', { ascending:true });
+
+  if(error){ showToast('Error cargando mensajes', true); console.error(error); return; }
+  renderMessages(data || []);
+}
+
+function renderMessages(msgs){
+  const box = document.getElementById('messages');
+  if(!box) return;
+  box.innerHTML = msgs.map(m => `
+    <div class="msg ${m.remitente === 'agente' ? 'agente' : 'contacto'}">
+      ${escapeHtml(m.contenido || '')}
+      <span class="meta">${fmtTime(m.timestamp)}</span>
+    </div>
+  `).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+// ---------- REALTIME ----------
+function subscribeToMessages(convId){
+  if(msgChannel) sb.removeChannel(msgChannel);
+  msgChannel = sb.channel('mensajes-' + convId)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'mensajes',
+      filter: `conversacion_id=eq.${convId}`
+    }, () => {
+      loadMessages(convId);
+      loadConversaciones();
+    })
+    .subscribe();
+}
+
+// ---------- SEND ----------
+async function sendMessage(){
+  const input = document.getElementById('composerInput');
+  const texto = input.value.trim();
+  if(!texto || !activeConvId) return;
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  input.value = '';
+
+  try{
+    const res = await fetch(SEND_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversacion_id: activeConvId,
+        telefono: activeContacto.telefono,
+        texto
+      })
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    showToast('Enviado');
+  } catch(err){
+    console.error(err);
+    showToast('Error al enviar — revisa n8n', true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- INIT ----------
+function init(){
+  loadConversaciones();
+  // refresco de la lista cada 15s (por si llega mensaje de otra conversación no abierta)
+  setInterval(loadConversaciones, 15000);
+}
+</script>
+</body>
+</html>
