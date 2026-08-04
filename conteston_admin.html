@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contestón — Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#16201c; --paper:#f6f4ee; --line:#dcd8cc;
+    --sage:#4f7a68; --sage-dark:#33574a; --sage-light:#e4ede8;
+    --amber:#c98a3a; --red:#a1512c; --muted:#7a7d72; --white:#ffffff;
+    --mono:'SF Mono','JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;}
+
+  #gate{position:fixed;inset:0;background:var(--ink);display:flex;align-items:center;justify-content:center;z-index:100;}
+  #gate.hidden{display:none;}
+  .gate-box{background:var(--paper);border-radius:4px;padding:40px 36px;width:280px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+  .gate-box .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sage);margin-bottom:6px;}
+  .gate-box h1{font-size:19px;margin:0 0 22px;font-weight:600;}
+  .gate-box input{width:100%;padding:12px;font-size:20px;letter-spacing:.3em;text-align:center;border:1px solid var(--line);border-radius:4px;background:var(--white);font-family:var(--mono);margin-bottom:14px;outline:none;}
+  .gate-box input:focus{border-color:var(--sage);}
+  .gate-box button{width:100%;padding:12px;background:var(--sage);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;}
+  .gate-err{color:var(--red);font-size:12px;margin-top:10px;font-family:var(--mono);min-height:16px;}
+
+  #app{display:none;height:100vh;flex-direction:column;}
+  #app.visible{display:flex;}
+
+  .topbar{padding:16px 28px;border-bottom:1px solid var(--line);background:var(--white);display:flex;justify-content:space-between;align-items:center;}
+  .topbar .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--sage);}
+  .topbar h1{margin:0;font-size:18px;font-weight:700;}
+  .tabbar{display:flex;gap:4px;}
+  .tabbar button{padding:8px 16px;background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--muted);border-radius:6px;}
+  .tabbar button.active{background:var(--sage);color:#fff;}
+
+  .body{flex:1;overflow-y:auto;padding:24px 28px;}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .toolbar h2{margin:0;font-size:16px;}
+  .btn{padding:9px 16px;background:var(--sage);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  .btn:hover{background:var(--sage-dark);}
+  .btn.secondary{background:var(--white);color:var(--ink);border:1px solid var(--line);}
+  .btn.danger{background:var(--red);}
+  .btn.small{padding:5px 10px;font-size:11.5px;}
+
+  table{width:100%;border-collapse:collapse;background:var(--white);border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);background:var(--paper);}
+  td{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13.5px;}
+  tr:last-child td{border-bottom:none;}
+  .badge{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:20px;}
+  .badge.on{background:var(--sage-light);color:var(--sage-dark);}
+  .badge.off{background:#f2e3df;color:var(--red);}
+  .servicios-tag{display:inline-block;background:var(--sage-light);color:var(--sage-dark);font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:20px;margin:1px 2px 1px 0;}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(22,32,28,.5);display:none;align-items:center;justify-content:center;z-index:50;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:var(--white);border-radius:10px;padding:28px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto;}
+  .modal h3{margin:0 0 18px;font-size:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;color:var(--muted);}
+  .field input[type=text],.field input[type=number],.field input[type=time]{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:6px;font-family:var(--sans);font-size:13.5px;outline:none;
+  }
+  .field input:focus{border-color:var(--sage);}
+  .field .hint{font-size:11px;color:var(--muted);margin-top:4px;}
+  .field-row{display:flex;gap:10px;}
+  .field-row .field{flex:1;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+  .modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;}
+  .chip-input{display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--line);border-radius:6px;padding:7px;min-height:38px;}
+  .chip{background:var(--sage-light);color:var(--sage-dark);font-size:12px;padding:3px 8px;border-radius:20px;display:flex;align-items:center;gap:5px;}
+  .chip button{background:none;border:none;cursor:pointer;color:var(--sage-dark);font-weight:700;padding:0;}
+  .chip-input input{border:none;outline:none;flex:1;min-width:80px;font-size:13px;}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-family:var(--mono);opacity:0;transition:opacity .2s;pointer-events:none;z-index:200;}
+  .toast.show{opacity:1;}
+  .toast.err{background:var(--red);}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="eyebrow">🦜 Platicón · Admin</div>
+    <h1>Acceso administrativo</h1>
+    <input type="password" id="pinInput" maxlength="6" placeholder="••••" autofocus inputmode="numeric">
+    <button onclick="checkPin()">Entrar</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Platicón</div>
+      <h1>Panel administrativo</h1>
+    </div>
+    <div class="tabbar">
+      <button id="tabNegociosBtn" class="active" onclick="showTab('negocios')">Negocios</button>
+      <button id="tabEspecialistasBtn" onclick="showTab('especialistas')">Especialistas</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div id="negociosView">
+      <div class="toolbar">
+        <h2>Negocios</h2>
+        <button class="btn" onclick="abrirModalNegocio()">+ Nuevo negocio</button>
+      </div>
+      <table>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Horario</th><th>Servicios</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="negociosTbody"></tbody>
+      </table>
+    </div>
+
+    <div id="especialistasView" style="display:none;">
+      <div class="toolbar">
+        <h2>Especialistas</h2>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="negocioFiltroEspecialistas" onchange="loadEspecialistas()" style="padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;"></select>
+          <button class="btn" onclick="abrirModalEspecialista()">+ Nuevo especialista</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Nombre</th><th>Servicios</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="especialistasTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Negocio -->
+<div class="modal-overlay" id="modalNegocio">
+  <div class="modal">
+    <h3 id="modalNegocioTitulo">Nuevo negocio</h3>
+    <input type="hidden" id="negocioId">
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" id="negocioNombre" placeholder="Ej. Barbería Central">
+    </div>
+    <div class="field">
+      <label>Phone Number ID (de Meta)</label>
+      <input type="text" id="negocioPhoneNumberId" placeholder="Ej. 1275227055667632">
+      <div class="hint">Lo sacas en Meta for Developers → WhatsApp → API Setup</div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Abre</label>
+        <input type="time" id="negocioApertura">
+      </div>
+      <div class="field">
+        <label>Cierra</label>
+        <input type="time" id="negocioCierre">
+      </div>
+      <div class="field">
+        <label>Duración slot (min)</label>
+        <input type="number" id="negocioDuracion" value="30" min="5" step="5">
+      </div>
+    </div>
+    <div class="field">
+      <label>Dirección</label>
+      <input type="text" id="negocioDireccion" placeholder="Calle, colonia, ciudad">
+    </div>
+    <div class="field">
+      <label>Servicios (Enter para agregar)</label>
+      <div class="chip-input" id="negocioServiciosChips" onclick="document.getElementById('negocioServiciosInput').focus()">
+        <input type="text" id="negocioServiciosInput" placeholder="Escribe y presiona Enter" onkeydown="agregarChip(event,'negocioServicios')">
+      </div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="negocioActivo" checked>
+      <label for="negocioActivo" style="margin:0;font-weight:400;">Negocio activo</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="cerrarModal('modalNegocio')">Cancelar</button>
+      <button class="btn" onclick="guardarNegocio()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Especialista -->
+<div class="modal-overlay" id="modalEspecialista">
+  <div class="modal">
+    <h3 id="modalEspecialistaTitulo">Nuevo especialista</h3>
+    <input type="hidden" id="especialistaId">
+    <div class="field">
+      <label>Negocio</label>
+      <select id="especialistaNegocioId" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;"></select>
+    </div>
+    <div class="field">
+      <label>Nombre</label>
+      <input type="text" id="especialistaNombre" placeholder="Ej. Pepe">
+    </div>
+    <div class="field">
+      <label>Servicios que ofrece (Enter para agregar)</label>
+      <div class="chip-input" id="especialistaServiciosChips" onclick="document.getElementById('especialistaServiciosInput').focus()">
+        <input type="text" id="especialistaServiciosInput" placeholder="Escribe y presiona Enter" onkeydown="agregarChip(event,'especialistaServicios')">
+      </div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="especialistaActivo" checked>
+      <label for="especialistaActivo" style="margin:0;font-weight:400;">Especialista activo</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="cerrarModal('modalEspecialista')">Cancelar</button>
+      <button class="btn" onclick="guardarEspecialista()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Reasignación -->
+<div class="modal-overlay" id="modalReasignar">
+  <div class="modal">
+    <h3>Tiene citas futuras</h3>
+    <p style="font-size:13px;color:var(--muted);margin-top:-10px;">
+      <strong id="reasignarNombreEspecialista"></strong> tiene <strong id="reasignarCount"></strong> cita(s)
+      próxima(s). ¿Qué quieres hacer con ellas antes de desactivarlo?
+    </p>
+    <div class="field">
+      <label>Reasignar a</label>
+      <select id="reasignarDestino" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;">
+        <option value="">— Cancelar todas en vez de reasignar —</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" onclick="cerrarModal('modalReasignar')">Cancelar acción</button>
+      <button class="btn danger" onclick="confirmarReasignacion()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ====== CONFIG ======
+const SUPABASE_URL = 'https://bfyrxykuaqxvbqtjojoe.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeXJ4eWt1YXF4dmJxdGpvam9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3ODEyNTYsImV4cCI6MjA5NDM1NzI1Nn0.-qF-Cqzj2nvlkaKDzDlGQcmj2L-OGbcrsCDNAlP_sxI';
+const SEND_WEBHOOK = 'https://comunicacionesenlanube.app.n8n.cloud/webhook/piloto-enviar-mensaje';
+const PIN = '6734';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let chipsState = { negocioServicios: [], especialistaServicios: [] };
+let negociosCache = [];
+
+// ---------- PIN GATE ----------
+function checkPin(){
+  const val = document.getElementById('pinInput').value;
+  if(val === PIN){
+    document.getElementById('gate').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    sessionStorage.setItem('admin_pin_ok','1');
+    init();
+  } else {
+    document.getElementById('gateErr').textContent = 'PIN incorrecto';
+    document.getElementById('pinInput').value = '';
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') checkPin(); });
+if(sessionStorage.getItem('admin_pin_ok') === '1'){
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  init();
+}
+
+function showToast(msg, isErr){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  setTimeout(()=> t.className='toast', 2500);
+}
+function escapeHtml(s){
+  return (s||'').toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ---------- TABS ----------
+function showTab(tab){
+  document.getElementById('tabNegociosBtn').classList.toggle('active', tab==='negocios');
+  document.getElementById('tabEspecialistasBtn').classList.toggle('active', tab==='especialistas');
+  document.getElementById('negociosView').style.display = tab==='negocios' ? 'block' : 'none';
+  document.getElementById('especialistasView').style.display = tab==='especialistas' ? 'block' : 'none';
+  if(tab==='especialistas') loadEspecialistas();
+}
+
+// ---------- CHIPS (servicios) ----------
+function agregarChip(event, key){
+  if(event.key !== 'Enter') return;
+  event.preventDefault();
+  const input = event.target;
+  const val = input.value.trim();
+  if(!val) return;
+  chipsState[key].push(val);
+  input.value = '';
+  renderChips(key);
+}
+function quitarChip(key, idx){
+  chipsState[key].splice(idx,1);
+  renderChips(key);
+}
+function renderChips(key){
+  const container = document.getElementById(key + 'Chips');
+  const input = document.getElementById(key + 'Input');
+  container.querySelectorAll('.chip').forEach(c => c.remove());
+  chipsState[key].forEach((val, idx) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `${escapeHtml(val)} <button onclick="quitarChip('${key}',${idx})">×</button>`;
+    container.insertBefore(chip, input);
+  });
+}
+
+function cerrarModal(id){ document.getElementById(id).classList.remove('show'); }
+
+// ---------- NEGOCIOS ----------
+async function loadNegocios(){
+  const { data, error } = await sb.from('negocios').select('*').order('creado_en', { ascending:false });
+  if(error){ showToast('Error cargando negocios', true); console.error(error); return; }
+  negociosCache = data || [];
+  renderNegocios();
+  poblarSelectNegocios();
+}
+
+function renderNegocios(){
+  const tbody = document.getElementById('negociosTbody');
+  if(!negociosCache.length){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Sin negocios registrados.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = negociosCache.map(n => `
+    <tr>
+      <td><strong>${escapeHtml(n.nombre)}</strong></td>
+      <td style="font-family:var(--mono);font-size:11.5px;">${escapeHtml(n.phone_number_id||'—')}</td>
+      <td>${(n.horario_apertura||'').slice(0,5)}–${(n.horario_cierre||'').slice(0,5)}</td>
+      <td>${(n.servicios||[]).map(s=>`<span class="servicios-tag">${escapeHtml(s)}</span>`).join('')}</td>
+      <td><span class="badge ${n.activo?'on':'off'}">${n.activo?'activo':'inactivo'}</span></td>
+      <td><button class="btn secondary small" onclick="editarNegocio('${n.id}')">Editar</button></td>
+    </tr>`).join('');
+}
+
+function poblarSelectNegocios(){
+  const opciones = negociosCache.map(n => `<option value="${n.id}">${escapeHtml(n.nombre)}</option>`).join('');
+  document.getElementById('negocioFiltroEspecialistas').innerHTML = opciones;
+  document.getElementById('especialistaNegocioId').innerHTML = opciones;
+}
+
+function abrirModalNegocio(){
+  document.getElementById('modalNegocioTitulo').textContent = 'Nuevo negocio';
+  document.getElementById('negocioId').value = '';
+  document.getElementById('negocioNombre').value = '';
+  document.getElementById('negocioPhoneNumberId').value = '';
+  document.getElementById('negocioApertura').value = '10:00';
+  document.getElementById('negocioCierre').value = '19:00';
+  document.getElementById('negocioDuracion').value = '30';
+  document.getElementById('negocioDireccion').value = '';
+  document.getElementById('negocioActivo').checked = true;
+  chipsState.negocioServicios = [];
+  renderChips('negocioServicios');
+  document.getElementById('modalNegocio').classList.add('show');
+}
+
+function editarNegocio(id){
+  const n = negociosCache.find(x => x.id === id);
+  if(!n) return;
+  document.getElementById('modalNegocioTitulo').textContent = 'Editar negocio';
+  document.getElementById('negocioId').value = n.id;
+  document.getElementById('negocioNombre').value = n.nombre || '';
+  document.getElementById('negocioPhoneNumberId').value = n.phone_number_id || '';
+  document.getElementById('negocioApertura').value = (n.horario_apertura||'10:00').slice(0,5);
+  document.getElementById('negocioCierre').value = (n.horario_cierre||'19:00').slice(0,5);
+  document.getElementById('negocioDuracion').value = n.duracion_slot_minutos || 30;
+  document.getElementById('negocioDireccion').value = n.direccion || '';
+  document.getElementById('negocioActivo').checked = !!n.activo;
+  chipsState.negocioServicios = [...(n.servicios||[])];
+  renderChips('negocioServicios');
+  document.getElementById('modalNegocio').classList.add('show');
+}
+
+async function guardarNegocio(){
+  const id = document.getElementById('negocioId').value;
+  const payload = {
+    nombre: document.getElementById('negocioNombre').value.trim(),
+    phone_number_id: document.getElementById('negocioPhoneNumberId').value.trim(),
+    horario_apertura: document.getElementById('negocioApertura').value,
+    horario_cierre: document.getElementById('negocioCierre').value,
+    duracion_slot_minutos: parseInt(document.getElementById('negocioDuracion').value) || 30,
+    direccion: document.getElementById('negocioDireccion').value.trim(),
+    servicios: chipsState.negocioServicios,
+    activo: document.getElementById('negocioActivo').checked
+  };
+  if(!payload.nombre){ showToast('Falta el nombre', true); return; }
+
+  const { error } = id
+    ? await sb.from('negocios').update(payload).eq('id', id)
+    : await sb.from('negocios').insert(payload);
+
+  if(error){ showToast('Error guardando negocio', true); console.error(error); return; }
+  showToast('Negocio guardado');
+  cerrarModal('modalNegocio');
+  loadNegocios();
+}
+
+// ---------- ESPECIALISTAS ----------
+let especialistasCache = [];
+
+async function loadEspecialistas(){
+  const negocioId = document.getElementById('negocioFiltroEspecialistas').value;
+  if(!negocioId){ document.getElementById('especialistasTbody').innerHTML = '<tr><td colspan="4" class="empty">Registra un negocio primero.</td></tr>'; return; }
+  const { data, error } = await sb.from('especialistas').select('*').eq('negocio_id', negocioId).order('creado_en', { ascending:false });
+  if(error){ showToast('Error cargando especialistas', true); console.error(error); return; }
+  especialistasCache = data || [];
+  renderEspecialistas();
+}
+
+function renderEspecialistas(){
+  const tbody = document.getElementById('especialistasTbody');
+  if(!especialistasCache.length){
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin especialistas para este negocio.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = especialistasCache.map(e => `
+    <tr>
+      <td><strong>${escapeHtml(e.nombre)}</strong></td>
+      <td>${(e.servicios||[]).map(s=>`<span class="servicios-tag">${escapeHtml(s)}</span>`).join('')}</td>
+      <td><span class="badge ${e.activo?'on':'off'}">${e.activo?'activo':'inactivo'}</span></td>
+      <td>
+        <button class="btn secondary small" onclick="editarEspecialista('${e.id}')">Editar</button>
+        <button class="btn ${e.activo?'danger':''} small" onclick="toggleEspecialista('${e.id}', ${!e.activo})">${e.activo?'Desactivar':'Activar'}</button>
+      </td>
+    </tr>`).join('');
+}
+
+function abrirModalEspecialista(){
+  document.getElementById('modalEspecialistaTitulo').textContent = 'Nuevo especialista';
+  document.getElementById('especialistaId').value = '';
+  document.getElementById('especialistaNombre').value = '';
+  document.getElementById('especialistaNegocioId').value = document.getElementById('negocioFiltroEspecialistas').value;
+  document.getElementById('especialistaActivo').checked = true;
+  chipsState.especialistaServicios = [];
+  renderChips('especialistaServicios');
+  document.getElementById('modalEspecialista').classList.add('show');
+}
+
+function editarEspecialista(id){
+  const e = especialistasCache.find(x => x.id === id);
+  if(!e) return;
+  document.getElementById('modalEspecialistaTitulo').textContent = 'Editar especialista';
+  document.getElementById('especialistaId').value = e.id;
+  document.getElementById('especialistaNombre').value = e.nombre || '';
+  document.getElementById('especialistaNegocioId').value = e.negocio_id;
+  document.getElementById('especialistaActivo').checked = !!e.activo;
+  chipsState.especialistaServicios = [...(e.servicios||[])];
+  renderChips('especialistaServicios');
+  document.getElementById('modalEspecialista').classList.add('show');
+}
+
+async function guardarEspecialista(){
+  const id = document.getElementById('especialistaId').value;
+  const payload = {
+    negocio_id: document.getElementById('especialistaNegocioId').value,
+    nombre: document.getElementById('especialistaNombre').value.trim(),
+    servicios: chipsState.especialistaServicios,
+    activo: document.getElementById('especialistaActivo').checked
+  };
+  if(!payload.nombre){ showToast('Falta el nombre', true); return; }
+
+  const { error } = id
+    ? await sb.from('especialistas').update(payload).eq('id', id)
+    : await sb.from('especialistas').insert(payload);
+
+  if(error){ showToast('Error guardando especialista', true); console.error(error); return; }
+  showToast('Especialista guardado');
+  cerrarModal('modalEspecialista');
+  loadEspecialistas();
+}
+
+// ---------- DESACTIVAR + REASIGNACIÓN ----------
+let reasignarContexto = null;
+
+async function toggleEspecialista(id, nuevoValor){
+  if(nuevoValor === true){
+    const { error } = await sb.from('especialistas').update({ activo: true }).eq('id', id);
+    if(error){ showToast('Error', true); return; }
+    showToast('Especialista reactivado');
+    loadEspecialistas();
+    return;
+  }
+
+  const hoy = new Date().toISOString().slice(0,10);
+  const { data: citas, error } = await sb.from('citas')
+    .select('id, conversacion_id, contactos(telefono)')
+    .eq('especialista_id', id)
+    .gte('fecha', hoy)
+    .not('estado', 'in', '("cancelada","completada")');
+
+  if(error){ showToast('Error revisando citas', true); console.error(error); return; }
+
+  if(!citas || citas.length === 0){
+    const { error: err2 } = await sb.from('especialistas').update({ activo: false }).eq('id', id);
+    if(err2){ showToast('Error', true); return; }
+    showToast('Especialista desactivado');
+    loadEspecialistas();
+    return;
+  }
+
+  const especialista = especialistasCache.find(e => e.id === id);
+  reasignarContexto = { especialistaId: id, citas };
+  document.getElementById('reasignarNombreEspecialista').textContent = especialista.nombre;
+  document.getElementById('reasignarCount').textContent = citas.length;
+
+  const otros = especialistasCache.filter(e => e.id !== id && e.activo);
+  const select = document.getElementById('reasignarDestino');
+  select.innerHTML = '<option value="">— Cancelar todas en vez de reasignar —</option>' +
+    otros.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+
+  document.getElementById('modalReasignar').classList.add('show');
+}
+
+async function confirmarReasignacion(){
+  const destino = document.getElementById('reasignarDestino').value;
+  const { especialistaId, citas } = reasignarContexto;
+
+  if(destino){
+    const { error } = await sb.from('citas').update({ especialista_id: destino }).in('id', citas.map(c=>c.id));
+    if(error){ showToast('Error reasignando', true); console.error(error); return; }
+
+    const nuevoNombre = especialistasCache.find(e => e.id === destino).nombre;
+    for(const c of citas){
+      if(c.conversacion_id && c.contactos && c.contactos.telefono){
+        try{
+          await fetch(SEND_WEBHOOK, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              conversacion_id: c.conversacion_id,
+              telefono: c.contactos.telefono,
+              texto: `Te avisamos que tu cita fue reasignada a ${nuevoNombre}. El horario se mantiene igual. Cualquier duda, escríbenos 🙂`
+            })
+          });
+        }catch(e){ console.error('Error avisando a cliente', e); }
+      }
+    }
+    showToast(`${citas.length} cita(s) reasignadas a ${nuevoNombre}`);
+  } else {
+    const { error } = await sb.from('citas').update({ estado: 'cancelada' }).in('id', citas.map(c=>c.id));
+    if(error){ showToast('Error cancelando', true); console.error(error); return; }
+
+    for(const c of citas){
+      if(c.conversacion_id && c.contactos && c.contactos.telefono){
+        try{
+          await fetch(SEND_WEBHOOK, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              conversacion_id: c.conversacion_id,
+              telefono: c.contactos.telefono,
+              texto: `Lamentamos informarte que tu cita fue cancelada por disponibilidad. Escríbenos para reagendar cuando gustes 🙏`
+            })
+          });
+        }catch(e){ console.error('Error avisando a cliente', e); }
+      }
+    }
+    showToast(`${citas.length} cita(s) canceladas`);
+  }
+
+  await sb.from('especialistas').update({ activo: false }).eq('id', especialistaId);
+  cerrarModal('modalReasignar');
+  loadEspecialistas();
+}
+
+// ---------- INIT ----------
+function init(){
+  loadNegocios();
+}
+</script>
+</body>
+</html>
