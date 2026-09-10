@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platicón · Redimir</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --sage:#4f46e5; --sage-dark:#3730a3; --ink:#1a1a1e; --paper:#f5f5f7;
+    --line:#e2e2e6; --ok:#0f9960; --err:#d64545;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .card{
+    background:#fff; border-radius:16px; padding:32px 28px; max-width:420px; width:100%;
+    box-shadow:0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+  }
+  .marca{font-size:13px; color:#8a8a92; letter-spacing:.02em; margin-bottom:6px;}
+  .folio{font-size:32px; font-weight:700; letter-spacing:-.01em; margin:0 0 4px;}
+  .negocio{font-size:15px; color:#55555c; margin-bottom:22px;}
+  .estado-pill{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
+    font-size:13.5px; font-weight:600; margin-bottom:22px;
+  }
+  .estado-pill.pendiente{background:#fff4e0; color:#a3620a;}
+  .estado-pill.ok{background:#e6f6ee; color:var(--ok);}
+  .estado-pill.err{background:#fdecec; color:var(--err);}
+  .bloque{border-top:1px solid var(--line); padding-top:16px; margin-top:4px;}
+  .bloque + .bloque{margin-top:16px;}
+  .fila{display:flex; justify-content:space-between; gap:12px; padding:5px 0; font-size:14.5px;}
+  .fila .k{color:#75757c;}
+  .fila .v{font-weight:600; text-align:right;}
+  .items{list-style:none; padding:0; margin:0;}
+  .items li{padding:8px 0; border-bottom:1px solid var(--line); font-size:14.5px; display:flex; justify-content:space-between; gap:10px;}
+  .items li:last-child{border-bottom:none;}
+  .items .nombre{flex:1;}
+  .items .cant{color:#75757c; white-space:nowrap;}
+  .total{display:flex; justify-content:space-between; padding-top:14px; margin-top:6px; border-top:1px solid var(--line); font-size:17px; font-weight:700;}
+  button.redimir{
+    width:100%; margin-top:26px; padding:15px; border:none; border-radius:10px;
+    background:var(--sage); color:#fff; font-size:16px; font-weight:600; cursor:pointer;
+  }
+  button.redimir:active{background:var(--sage-dark);}
+  button.redimir:disabled{background:#c7c7cf; cursor:default;}
+  .confirmado{
+    text-align:center; padding:18px 0 4px;
+  }
+  .confirmado .check{font-size:40px; margin-bottom:8px;}
+  .confirmado p{color:#55555c; font-size:14.5px; margin:4px 0 0;}
+  .mensaje-error{text-align:center; padding:40px 8px; color:#75757c; font-size:15px;}
+  .cargando{text-align:center; padding:60px 8px; color:#9a9aa2; font-size:15px;}
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="cargando" id="cargando">Buscando tu información…</div>
+  </div>
+
+<script>
+const SUPABASE_URL = 'https://bfyrxykuaqxvbqtjojoe.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmeXJ4eWt1YXF4dmJxdGpvam9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3ODEyNTYsImV4cCI6MjA5NDM1NzI1Nn0.-qF-Cqzj2nvlkaKDzDlGQcmj2L-OGbcrsCDNAlP_sxI';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const codigo = new URLSearchParams(window.location.search).get('codigo');
+const card = document.getElementById('card');
+
+function escapeHtml(s){
+  return (s || '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function formatearFecha(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' });
+}
+
+async function cargar(){
+  if(!codigo){
+    card.innerHTML = '<div class="mensaje-error">Este enlace no incluye un código válido.</div>';
+    return;
+  }
+  const { data, error } = await sb.rpc('obtener_por_codigo_qr', { p_codigo: codigo });
+  if(error || !data){
+    card.innerHTML = '<div class="mensaje-error">No encontramos ningún pedido o cita con este código. Verifica que el enlace esté completo.</div>';
+    return;
+  }
+  if(data.tipo === 'pedido') renderPedido(data);
+  else renderCita(data);
+}
+
+function renderPedido(p){
+  const yaEntregado = p.estado === 'entregado';
+  const cancelado = p.estado === 'cancelado';
+  const items = (p.items || []).map(it => {
+    const atrib = it.atributos ? ' (' + Object.values(it.atributos).join(' / ') + ')' : '';
+    return `<li><span class="nombre">${escapeHtml(it.nombre)}${escapeHtml(atrib)}</span><span class="cant">x${it.cantidad}</span></li>`;
+  }).join('');
+
+  let pill = '<span class="estado-pill pendiente">Pendiente de entrega</span>';
+  if(yaEntregado) pill = '<span class="estado-pill ok">✓ Ya entregado</span>';
+  if(cancelado) pill = '<span class="estado-pill err">Cancelado</span>';
+
+  card.innerHTML = `
+    <div class="marca">Pedido</div>
+    <div class="folio">${escapeHtml(p.folio)}</div>
+    <div class="negocio">${escapeHtml(p.negocio)}${p.sucursal ? ' · ' + escapeHtml(p.sucursal) : ''}</div>
+    ${pill}
+    <div class="bloque">
+      <ul class="items">${items}</ul>
+      <div class="total"><span>Total</span><span>$${Number(p.total || 0).toFixed(2)} MXN</span></div>
+    </div>
+    ${(!yaEntregado && !cancelado) ? '<button class="redimir" id="btnRedimir">Marcar como entregado</button>' : ''}
+  `;
+  const btn = document.getElementById('btnRedimir');
+  if(btn) btn.onclick = () => redimir('pedido', p.folio);
+}
+
+function renderCita(c){
+  let pill = '<span class="estado-pill pendiente">Aún no llega</span>';
+  if(c.llego) pill = '<span class="estado-pill ok">✓ Cliente llegó</span>';
+
+  card.innerHTML = `
+    <div class="marca">Cita</div>
+    <div class="folio">${escapeHtml(c.folio)}</div>
+    <div class="negocio">${escapeHtml(c.negocio)}${c.sucursal ? ' · ' + escapeHtml(c.sucursal) : ''}</div>
+    ${pill}
+    <div class="bloque">
+      <div class="fila"><span class="k">Cliente</span><span class="v">${escapeHtml(c.cliente_nombre || '—')}</span></div>
+      <div class="fila"><span class="k">Servicio</span><span class="v">${escapeHtml(c.servicio || '—')}</span></div>
+      <div class="fila"><span class="k">Con</span><span class="v">${escapeHtml(c.especialista || '—')}</span></div>
+      <div class="fila"><span class="k">Fecha</span><span class="v">${formatearFecha(c.fecha)}</span></div>
+      <div class="fila"><span class="k">Hora</span><span class="v">${(c.hora || '').slice(0,5)} hrs</span></div>
+    </div>
+    ${!c.llego ? '<button class="redimir" id="btnRedimir">Marcar que el cliente llegó</button>' : ''}
+  `;
+  const btn = document.getElementById('btnRedimir');
+  if(btn) btn.onclick = () => redimir('cita', c.folio);
+}
+
+async function redimir(tipo, folio){
+  const btn = document.getElementById('btnRedimir');
+  btn.disabled = true;
+  btn.textContent = 'Guardando…';
+  const { data, error } = await sb.rpc('redimir_por_codigo_qr', { p_codigo: codigo });
+  if(error || !data || !data.ok){
+    btn.disabled = false;
+    btn.textContent = tipo === 'pedido' ? 'Marcar como entregado' : 'Marcar que el cliente llegó';
+    alert((data && data.error) || 'Algo salió mal, intenta de nuevo.');
+    return;
+  }
+  const mensaje = tipo === 'pedido' ? 'Pedido entregado' : 'Cliente registrado';
+  document.querySelector('.bloque + .bloque, .bloque').insertAdjacentHTML('afterend', `
+    <div class="confirmado">
+      <div class="check">✓</div>
+      <strong>${mensaje}</strong>
+      <p>Folio ${escapeHtml(folio)}</p>
+    </div>
+  `);
+  btn.remove();
+}
+
+cargar();
+</script>
+</body>
+</html>
